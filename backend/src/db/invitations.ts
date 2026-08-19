@@ -52,3 +52,15 @@ export function findInvitationByCode(db: DatabaseSync, code: string): Invitation
     .get(code);
   return row as unknown as InvitationRecord | undefined;
 }
+
+export function findInvitationsByResidentId(
+  db: DatabaseSync,
+  residentId: number,
+): InvitationRecord[] {
+  const rows = db
+    .prepare(
+      'SELECT id, code, residentId, unitId, visitorName, validFrom, validUntil, usedAt, createdAt FROM invitations WHERE residentId = ?',
+    )
+    .all(residentId);
+  return rows as unknown as InvitationRecord[];
+}

@@ -27,3 +27,13 @@ export interface CreateInvitationInput {
 export interface CreateInvitationResponse {
   invitation: Invitation;
 }
+
+export type InvitationStatus = 'pending' | 'used' | 'expired';
+
+export interface InvitationWithStatus extends Invitation {
+  status: InvitationStatus;
+}
+
+export interface ListInvitationsResponse {
+  invitations: InvitationWithStatus[];
+}

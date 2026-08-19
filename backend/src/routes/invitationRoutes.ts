@@ -4,7 +4,7 @@ import type { DatabaseSync } from 'node:sqlite';
 
 import { requireAuth } from '../middleware/requireAuth';
 import { requireRole } from '../middleware/requireRole';
-import { createInvitation } from '../services/invitationService';
+import { createInvitation, listInvitationsForResident } from '../services/invitationService';
 import type { CreateInvitationInput } from '../services/invitationService';
 import {
   InvalidInvitationInputError,
@@ -41,6 +41,11 @@ export function createInvitationRouter(db: DatabaseSync): Router {
       }
       throw error;
     }
+  });
+
+  router.get('/', requireAuth, requireRole('resident'), (req, res) => {
+    const invitations = listInvitationsForResident(db, req.user!.id);
+    res.status(200).json({ invitations });
   });
 
   return router;

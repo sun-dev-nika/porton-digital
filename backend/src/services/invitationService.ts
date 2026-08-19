@@ -3,7 +3,11 @@ import { randomBytes } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
 
 import { findResidentById } from '../db/residents';
-import { findInvitationByCode, insertInvitation } from '../db/invitations';
+import {
+  findInvitationByCode,
+  findInvitationsByResidentId,
+  insertInvitation,
+} from '../db/invitations';
 import type { InvitationRecord } from '../db/invitations';
 import {
   InvalidInvitationInputError,
@@ -86,4 +90,34 @@ export function createInvitation(
     validFrom,
     validUntil,
   });
+}
+
+export type InvitationStatus = 'pending' | 'used' | 'expired';
+
+export interface InvitationWithStatus extends InvitationRecord {
+  status: InvitationStatus;
+}
+
+export function deriveInvitationStatus(
+  invitation: InvitationRecord,
+  now: Date = new Date(),
+): InvitationStatus {
+  if (invitation.usedAt !== null) {
+    return 'used';
+  }
+  if (now.getTime() > Date.parse(invitation.validUntil)) {
+    return 'expired';
+  }
+  return 'pending';
+}
+
+export function listInvitationsForResident(
+  db: DatabaseSync,
+  residentId: number,
+  now: Date = new Date(),
+): InvitationWithStatus[] {
+  return findInvitationsByResidentId(db, residentId).map((invitation) => ({
+    ...invitation,
+    status: deriveInvitationStatus(invitation, now),
+  }));
 }
