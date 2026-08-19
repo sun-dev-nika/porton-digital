@@ -293,3 +293,139 @@ describe('GET /invitations', () => {
     expect(response.status).toBe(403);
   });
 });
+
+describe('GET /invitations/:id', () => {
+  let tempDir: string;
+  let dbPath: string;
+  let db: DatabaseSync;
+  let app: Express;
+  let residentToken: string;
+  let guardToken: string;
+  let residentId: number;
+  let otherResidentId: number;
+
+  beforeEach(() => {
+    tempDir = mkdtempSync(join(tmpdir(), 'porton-digital-getinvitationdetail-'));
+    dbPath = join(tempDir, 'getinvitationdetail-test.sqlite');
+    db = createDatabase(dbPath);
+    seedDevelopmentData(db);
+    app = createApp(db);
+
+    const resident = findResidentByEmail(db, 'resident@dev.local')!;
+    residentId = resident.id;
+    residentToken = sign({ id: resident.id, role: 'resident' }, JWT_SECRET);
+
+    const guard = findGuardByEmail(db, 'guard@dev.local')!;
+    guardToken = sign({ id: guard.id, role: 'guard' }, JWT_SECRET);
+
+    const otherUnitId = db.prepare('INSERT INTO units (label) VALUES (?)').run('404')
+      .lastInsertRowid as number;
+    otherResidentId = db
+      .prepare('INSERT INTO residents (unitId, fullName, email, passwordHash) VALUES (?, ?, ?, ?)')
+      .run(otherUnitId, 'Otro Residente Detalle', 'otro-detalle@dev.local', 'hash-irrelevante')
+      .lastInsertRowid as number;
+  });
+
+  afterEach(() => {
+    db.close();
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it('devuelve 200 con el detalle cuando la invitación pertenece al residente autenticado', async () => {
+    const createResponse = await request(app)
+      .post('/invitations')
+      .set('Authorization', `Bearer ${residentToken}`)
+      .send({
+        visitorName: 'Visita Propia',
+        validFrom: '2026-01-01T10:00:00.000Z',
+        validUntil: '2026-01-01T12:00:00.000Z',
+      });
+    const invitationId = createResponse.body.invitation.id;
+
+    const response = await request(app)
+      .get(`/invitations/${invitationId}`)
+      .set('Authorization', `Bearer ${residentToken}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.invitation).toMatchObject({
+      id: invitationId,
+      visitorName: 'Visita Propia',
+      validFrom: '2026-01-01T10:00:00.000Z',
+      validUntil: '2026-01-01T12:00:00.000Z',
+      residentId,
+    });
+    expect(typeof response.body.invitation.code).toBe('string');
+  });
+
+  it('rechaza con 403 cuando la invitación pertenece a otro residente', async () => {
+    const otherToken = sign({ id: otherResidentId, role: 'resident' }, JWT_SECRET);
+    const createResponse = await request(app)
+      .post('/invitations')
+      .set('Authorization', `Bearer ${otherToken}`)
+      .send({
+        visitorName: 'Visita Ajena',
+        validFrom: '2026-01-01T10:00:00.000Z',
+        validUntil: '2026-01-01T12:00:00.000Z',
+      });
+    const invitationId = createResponse.body.invitation.id;
+
+    const response = await request(app)
+      .get(`/invitations/${invitationId}`)
+      .set('Authorization', `Bearer ${residentToken}`);
+
+    expect(response.status).toBe(403);
+    expect(response.body.invitation).toBeUndefined();
+  });
+
+  it('rechaza con 404 cuando el id no corresponde a ninguna invitación existente', async () => {
+    const response = await request(app)
+      .get('/invitations/999999')
+      .set('Authorization', `Bearer ${residentToken}`);
+
+    expect(response.status).toBe(404);
+    expect(response.body.invitation).toBeUndefined();
+  });
+
+  it('rechaza con 404 cuando el id no es numérico', async () => {
+    const response = await request(app)
+      .get('/invitations/abc')
+      .set('Authorization', `Bearer ${residentToken}`);
+
+    expect(response.status).toBe(404);
+    expect(response.body.invitation).toBeUndefined();
+  });
+
+  it('rechaza con 401 sin token de autenticación', async () => {
+    const createResponse = await request(app)
+      .post('/invitations')
+      .set('Authorization', `Bearer ${residentToken}`)
+      .send({
+        visitorName: 'Visita Propia',
+        validFrom: '2026-01-01T10:00:00.000Z',
+        validUntil: '2026-01-01T12:00:00.000Z',
+      });
+    const invitationId = createResponse.body.invitation.id;
+
+    const response = await request(app).get(`/invitations/${invitationId}`);
+
+    expect(response.status).toBe(401);
+  });
+
+  it('rechaza con 403 un token de rol guard', async () => {
+    const createResponse = await request(app)
+      .post('/invitations')
+      .set('Authorization', `Bearer ${residentToken}`)
+      .send({
+        visitorName: 'Visita Propia',
+        validFrom: '2026-01-01T10:00:00.000Z',
+        validUntil: '2026-01-01T12:00:00.000Z',
+      });
+    const invitationId = createResponse.body.invitation.id;
+
+    const response = await request(app)
+      .get(`/invitations/${invitationId}`)
+      .set('Authorization', `Bearer ${guardToken}`);
+
+    expect(response.status).toBe(403);
+  });
+});

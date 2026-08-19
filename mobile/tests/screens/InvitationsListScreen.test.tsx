@@ -1,10 +1,16 @@
-import { render, waitFor } from '@testing-library/react-native';
+import { fireEvent, render, waitFor } from '@testing-library/react-native';
 
 import { InvitationsListScreen } from '../../src/screens/InvitationsListScreen';
 import { listInvitations } from '../../src/api';
 
 jest.mock('../../src/api', () => ({
   listInvitations: jest.fn(),
+}));
+
+const mockPush = jest.fn();
+
+jest.mock('expo-router', () => ({
+  useRouter: () => ({ push: mockPush }),
 }));
 
 const mockedListInvitations = listInvitations as jest.Mock;
@@ -56,5 +62,30 @@ describe('InvitationsListScreen', () => {
 
     await waitFor(() => expect(view.getByTestId('invitations-error')).toBeTruthy());
     expect(view.queryByTestId('invitation-item-1')).toBeNull();
+  });
+
+  it('navega al detalle de la invitación al tocar un ítem de la lista', async () => {
+    mockedListInvitations.mockResolvedValue({
+      invitations: [
+        {
+          id: 1,
+          code: 'ABCDEFGHJKMN',
+          visitorName: 'Juan Pérez',
+          validFrom: '2026-01-01T10:00:00.000Z',
+          validUntil: '2026-01-01T12:00:00.000Z',
+          status: 'pending',
+        },
+      ],
+    });
+
+    const view = render(<InvitationsListScreen />);
+
+    await waitFor(() => expect(view.getByTestId('invitation-item-1')).toBeTruthy());
+    fireEvent.press(view.getByTestId('invitation-item-1'));
+
+    expect(mockPush).toHaveBeenCalledWith({
+      pathname: '/invitationDetail',
+      params: { id: '1' },
+    });
   });
 });

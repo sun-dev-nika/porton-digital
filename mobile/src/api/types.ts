@@ -37,3 +37,7 @@ export interface InvitationWithStatus extends Invitation {
 export interface ListInvitationsResponse {
   invitations: InvitationWithStatus[];
 }
+
+export interface GetInvitationResponse {
+  invitation: InvitationWithStatus;
+}

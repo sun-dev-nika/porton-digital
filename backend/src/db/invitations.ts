@@ -44,6 +44,15 @@ export function insertInvitation(db: DatabaseSync, input: NewInvitationInput): I
   return row as unknown as InvitationRecord;
 }
 
+export function findInvitationById(db: DatabaseSync, id: number): InvitationRecord | undefined {
+  const row = db
+    .prepare(
+      'SELECT id, code, residentId, unitId, visitorName, validFrom, validUntil, usedAt, createdAt FROM invitations WHERE id = ?',
+    )
+    .get(id);
+  return row as unknown as InvitationRecord | undefined;
+}
+
 export function findInvitationByCode(db: DatabaseSync, code: string): InvitationRecord | undefined {
   const row = db
     .prepare(

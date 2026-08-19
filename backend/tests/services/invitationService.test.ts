@@ -10,11 +10,14 @@ import { seedDevelopmentData } from '../../src/db/seed';
 import {
   InvalidInvitationInputError,
   InvalidInvitationWindowError,
+  InvitationAccessDeniedError,
+  InvitationNotFoundError,
 } from '../../src/services/errors';
 import {
   createInvitation,
   deriveInvitationStatus,
   generateInvitationCode,
+  getInvitationForResident,
   listInvitationsForResident,
 } from '../../src/services/invitationService';
 import type { InvitationRecord } from '../../src/db/invitations';
@@ -209,5 +212,67 @@ describe('invitationService.listInvitationsForResident', () => {
     expect(result[0]!.visitorName).toBe('Visita Propia');
     expect(result[0]!.residentId).toBe(residentId);
     expect(['pending', 'used', 'expired']).toContain(result[0]!.status);
+  });
+});
+
+describe('invitationService.getInvitationForResident', () => {
+  let tempDir: string;
+  let dbPath: string;
+  let db: DatabaseSync;
+  let residentId: number;
+  let otherResidentId: number;
+
+  beforeEach(() => {
+    tempDir = mkdtempSync(join(tmpdir(), 'porton-digital-get-invitation-service-'));
+    dbPath = join(tempDir, 'get-invitation-service-test.sqlite');
+    db = createDatabase(dbPath);
+    seedDevelopmentData(db);
+    const resident = findResidentByEmail(db, 'resident@dev.local');
+    residentId = resident!.id;
+
+    const otherUnitId = db.prepare('INSERT INTO units (label) VALUES (?)').run('303')
+      .lastInsertRowid as number;
+    otherResidentId = db
+      .prepare('INSERT INTO residents (unitId, fullName, email, passwordHash) VALUES (?, ?, ?, ?)')
+      .run(otherUnitId, 'Otro Residente', 'otro-residente-detalle@dev.local', 'hash-irrelevante')
+      .lastInsertRowid as number;
+  });
+
+  afterEach(() => {
+    db.close();
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it('devuelve el detalle cuando la invitación pertenece al residente autenticado', () => {
+    const invitation = createInvitation(db, residentId, {
+      visitorName: 'Visita Propia',
+      validFrom: '2026-01-01T10:00:00.000Z',
+      validUntil: '2026-01-01T12:00:00.000Z',
+    });
+
+    const result = getInvitationForResident(db, residentId, invitation.id);
+
+    expect(result.id).toBe(invitation.id);
+    expect(result.code).toBe(invitation.code);
+    expect(result.visitorName).toBe('Visita Propia');
+    expect(['pending', 'used', 'expired']).toContain(result.status);
+  });
+
+  it('lanza InvitationAccessDeniedError cuando la invitación pertenece a otro residente', () => {
+    const invitation = createInvitation(db, otherResidentId, {
+      visitorName: 'Visita Ajena',
+      validFrom: '2026-01-01T10:00:00.000Z',
+      validUntil: '2026-01-01T12:00:00.000Z',
+    });
+
+    expect(() => getInvitationForResident(db, residentId, invitation.id)).toThrow(
+      InvitationAccessDeniedError,
+    );
+  });
+
+  it('lanza InvitationNotFoundError cuando el id no corresponde a ninguna invitación', () => {
+    expect(() => getInvitationForResident(db, residentId, 999999)).toThrow(
+      InvitationNotFoundError,
+    );
   });
 });

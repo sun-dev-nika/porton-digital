@@ -5,6 +5,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import { findResidentById } from '../db/residents';
 import {
   findInvitationByCode,
+  findInvitationById,
   findInvitationsByResidentId,
   insertInvitation,
 } from '../db/invitations';
@@ -12,7 +13,9 @@ import type { InvitationRecord } from '../db/invitations';
 import {
   InvalidInvitationInputError,
   InvalidInvitationWindowError,
+  InvitationAccessDeniedError,
   InvitationCodeGenerationError,
+  InvitationNotFoundError,
   ResidentNotFoundError,
 } from './errors';
 
@@ -120,4 +123,22 @@ export function listInvitationsForResident(
     ...invitation,
     status: deriveInvitationStatus(invitation, now),
   }));
+}
+
+export function getInvitationForResident(
+  db: DatabaseSync,
+  residentId: number,
+  invitationId: number,
+  now: Date = new Date(),
+): InvitationWithStatus {
+  const invitation = findInvitationById(db, invitationId);
+  if (!invitation) {
+    throw new InvitationNotFoundError('La invitación solicitada no existe');
+  }
+  if (invitation.residentId !== residentId) {
+    throw new InvitationAccessDeniedError(
+      'La invitación no pertenece al residente autenticado',
+    );
+  }
+  return { ...invitation, status: deriveInvitationStatus(invitation, now) };
 }

@@ -9,3 +9,7 @@ export class InvalidInvitationWindowError extends DomainError {}
 export class ResidentNotFoundError extends DomainError {}
 
 export class InvitationCodeGenerationError extends DomainError {}
+
+export class InvitationNotFoundError extends DomainError {}
+
+export class InvitationAccessDeniedError extends DomainError {}

@@ -1,6 +1,6 @@
 import * as SecureStore from 'expo-secure-store';
 
-import { createInvitation, listInvitations } from '../../src/api/invitations';
+import { createInvitation, getInvitation, listInvitations } from '../../src/api/invitations';
 
 jest.mock('expo-secure-store', () => ({
   getItemAsync: jest.fn(),
@@ -84,6 +84,38 @@ describe('listInvitations', () => {
     expect(result).toEqual(listResponse);
     const [url, init] = (global.fetch as jest.Mock).mock.calls[0];
     expect(url).toBe('http://localhost:3000/invitations');
+    expect(init.method).toBe('GET');
+    expect(init.body).toBeUndefined();
+  });
+});
+
+describe('getInvitation', () => {
+  const secureStore = SecureStore as jest.Mocked<typeof SecureStore>;
+
+  beforeEach(() => {
+    jest.resetAllMocks();
+    global.fetch = jest.fn();
+  });
+
+  it('llama a GET /invitations/<id> sin method ni body explícitos y propaga el resultado tipado', async () => {
+    secureStore.getItemAsync.mockResolvedValue('stored-jwt-token');
+    const detailResponse = {
+      invitation: {
+        id: 1,
+        code: 'ABCDEFGHJKMN',
+        visitorName: 'Juan Pérez',
+        validFrom: '2026-01-01T10:00:00.000Z',
+        validUntil: '2026-01-01T12:00:00.000Z',
+        status: 'pending',
+      },
+    };
+    (global.fetch as jest.Mock).mockResolvedValue(jsonResponse(200, detailResponse));
+
+    const result = await getInvitation(1);
+
+    expect(result).toEqual(detailResponse);
+    const [url, init] = (global.fetch as jest.Mock).mock.calls[0];
+    expect(url).toBe('http://localhost:3000/invitations/1');
     expect(init.method).toBe('GET');
     expect(init.body).toBeUndefined();
   });

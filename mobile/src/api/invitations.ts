@@ -2,6 +2,7 @@ import { request } from './client';
 import type {
   CreateInvitationInput,
   CreateInvitationResponse,
+  GetInvitationResponse,
   ListInvitationsResponse,
 } from './types';
 
@@ -14,4 +15,8 @@ export function createInvitation(input: CreateInvitationInput): Promise<CreateIn
 
 export function listInvitations(): Promise<ListInvitationsResponse> {
   return request<ListInvitationsResponse>('/invitations');
+}
+
+export function getInvitation(id: number): Promise<GetInvitationResponse> {
+  return request<GetInvitationResponse>(`/invitations/${id}`);
 }
