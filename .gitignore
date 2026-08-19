@@ -1,0 +1,22 @@
+# --- Ruido estándar Node / Expo (dentro de backend/ y mobile/) ---
+node_modules/
+.expo/
+dist/
+build/
+*.tmp
+.DS_Store
+*.db
+*.sqlite
+
+# --- Arnés SDD: proceso de desarrollo, no producto. No va al repo. ---
+/AGENTS.md
+/CLAUDE.md
+/CHECKPOINTS.md
+/init.sh
+/feature_list.json
+/.claude/
+/specs/
+/progress/
+/docs/
+/scripts/
+/README.md
