@@ -26,3 +26,12 @@ export function findResidentById(db: DatabaseSync, id: number): ResidentRecord |
     .get(id);
   return row as unknown as ResidentRecord | undefined;
 }
+
+export function updateResidentPushToken(
+  db: DatabaseSync,
+  id: number,
+  pushToken: string,
+): ResidentRecord {
+  db.prepare('UPDATE residents SET pushToken = ? WHERE id = ?').run(pushToken, id);
+  return findResidentById(db, id)!;
+}

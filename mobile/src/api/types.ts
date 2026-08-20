@@ -98,3 +98,11 @@ export interface TodayEntry extends Entry {
 export interface ListTodayEntriesResponse {
   entries: TodayEntry[];
 }
+
+export interface RegisterPushTokenInput {
+  pushToken: string;
+}
+
+export interface RegisterPushTokenResponse {
+  pushToken: string;
+}

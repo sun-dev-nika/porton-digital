@@ -3,6 +3,7 @@ import { useState } from 'react';
 
 import { login } from '../api';
 import type { UserRole } from '../api';
+import { registerResidentPushToken } from './usePushTokenRegistration';
 
 export function getRoleHomeRoute(role: UserRole): string {
   return role === 'resident' ? '/residentHome' : '/guardHome';
@@ -24,6 +25,9 @@ export function useLogin(): UseLoginResult {
     setIsSubmitting(true);
     try {
       const { user } = await login(email, password);
+      if (user.role === 'resident') {
+        void registerResidentPushToken();
+      }
       router.replace(getRoleHomeRoute(user.role));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al iniciar sesión');

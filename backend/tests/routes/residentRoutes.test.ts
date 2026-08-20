@@ -12,7 +12,7 @@ import { createApp } from '../../src/app';
 import { JWT_SECRET } from '../../src/config';
 import { createDatabase } from '../../src/db/createDatabase';
 import { findGuardByEmail } from '../../src/db/guards';
-import { findResidentByEmail } from '../../src/db/residents';
+import { findResidentByEmail, findResidentById } from '../../src/db/residents';
 import { seedDevelopmentData } from '../../src/db/seed';
 
 describe('GET /residents/me/entries', () => {
@@ -198,6 +198,100 @@ describe('GET /residents/me/entries', () => {
     const response = await request(app)
       .get('/residents/me/entries')
       .set('Authorization', `Bearer ${guardToken}`);
+
+    expect(response.status).toBe(403);
+  });
+});
+
+describe('POST /residents/me/push-token', () => {
+  let tempDir: string;
+  let dbPath: string;
+  let db: DatabaseSync;
+  let app: Express;
+  let residentToken: string;
+  let guardToken: string;
+  let residentId: number;
+
+  beforeEach(() => {
+    tempDir = mkdtempSync(join(tmpdir(), 'porton-digital-residentroutes-pushtoken-'));
+    dbPath = join(tempDir, 'residentroutes-pushtoken-test.sqlite');
+    db = createDatabase(dbPath);
+    seedDevelopmentData(db);
+    app = createApp(db);
+
+    const resident = findResidentByEmail(db, 'resident@dev.local')!;
+    residentId = resident.id;
+    residentToken = sign({ id: resident.id, role: 'resident' }, JWT_SECRET);
+
+    const guard = findGuardByEmail(db, 'guard@dev.local')!;
+    guardToken = sign({ id: guard.id, role: 'guard' }, JWT_SECRET);
+  });
+
+  afterEach(() => {
+    db.close();
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it('devuelve 200 con { pushToken } persistido (R1)', async () => {
+    const response = await request(app)
+      .post('/residents/me/push-token')
+      .set('Authorization', `Bearer ${residentToken}`)
+      .send({ pushToken: 'ExponentPushToken[abc]' });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ pushToken: 'ExponentPushToken[abc]' });
+    expect(findResidentById(db, residentId)!.pushToken).toBe('ExponentPushToken[abc]');
+  });
+
+  it('rechaza con 400 un body sin pushToken, sin modificar la columna (R2)', async () => {
+    const response = await request(app)
+      .post('/residents/me/push-token')
+      .set('Authorization', `Bearer ${residentToken}`)
+      .send({});
+
+    expect(response.status).toBe(400);
+    expect(findResidentById(db, residentId)!.pushToken).toBeNull();
+  });
+
+  it('rechaza con 400 un body con pushToken vacío, sin modificar la columna (R2)', async () => {
+    const response = await request(app)
+      .post('/residents/me/push-token')
+      .set('Authorization', `Bearer ${residentToken}`)
+      .send({ pushToken: '' });
+
+    expect(response.status).toBe(400);
+    expect(findResidentById(db, residentId)!.pushToken).toBeNull();
+  });
+
+  it('una segunda llamada con un pushToken distinto devuelve el nuevo valor, no el anterior (R3)', async () => {
+    await request(app)
+      .post('/residents/me/push-token')
+      .set('Authorization', `Bearer ${residentToken}`)
+      .send({ pushToken: 'ExponentPushToken[primero]' });
+
+    const response = await request(app)
+      .post('/residents/me/push-token')
+      .set('Authorization', `Bearer ${residentToken}`)
+      .send({ pushToken: 'ExponentPushToken[segundo]' });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ pushToken: 'ExponentPushToken[segundo]' });
+    expect(findResidentById(db, residentId)!.pushToken).toBe('ExponentPushToken[segundo]');
+  });
+
+  it('rechaza con 401 sin token de autenticación (R4)', async () => {
+    const response = await request(app)
+      .post('/residents/me/push-token')
+      .send({ pushToken: 'ExponentPushToken[abc]' });
+
+    expect(response.status).toBe(401);
+  });
+
+  it('rechaza con 403 un token de rol guard (R5)', async () => {
+    const response = await request(app)
+      .post('/residents/me/push-token')
+      .set('Authorization', `Bearer ${guardToken}`)
+      .send({ pushToken: 'ExponentPushToken[abc]' });
 
     expect(response.status).toBe(403);
   });

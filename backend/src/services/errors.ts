@@ -23,3 +23,5 @@ export class InvitationNotYetValidError extends DomainError {}
 export class InvalidManualEntryInputError extends DomainError {}
 
 export class UnitNotFoundError extends DomainError {}
+
+export class InvalidPushTokenInputError extends DomainError {}

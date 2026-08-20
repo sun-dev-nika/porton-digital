@@ -10,6 +10,7 @@ export {
   listInvitations,
   validateInvitationByCode,
 } from './invitations';
+export { registerPushToken } from './residents';
 export { clearToken, getToken, saveToken } from './tokenStorage';
 export type {
   AuthenticatedUser,
@@ -28,6 +29,8 @@ export type {
   ListResidentEntriesResponse,
   ListTodayEntriesResponse,
   LoginResponse,
+  RegisterPushTokenInput,
+  RegisterPushTokenResponse,
   ResidentEntry,
   TodayEntry,
   UserRole,
