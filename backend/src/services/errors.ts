@@ -19,3 +19,7 @@ export class InvitationAlreadyUsedError extends DomainError {}
 export class InvitationExpiredError extends DomainError {}
 
 export class InvitationNotYetValidError extends DomainError {}
+
+export class InvalidManualEntryInputError extends DomainError {}
+
+export class UnitNotFoundError extends DomainError {}

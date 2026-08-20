@@ -20,4 +20,12 @@ describe('GuardHomeScreen', () => {
 
     expect(mockPush).toHaveBeenCalledWith('/scan');
   });
+
+  it('navega a /manualEntry al presionar el control de registro manual (R11)', () => {
+    const view = render(<GuardHomeScreen />);
+
+    fireEvent.press(view.getByTestId('guard-home-manual-entry-button'));
+
+    expect(mockPush).toHaveBeenCalledWith('/manualEntry');
+  });
 });

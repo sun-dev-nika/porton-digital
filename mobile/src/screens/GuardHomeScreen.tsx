@@ -10,6 +10,12 @@ export function GuardHomeScreen(): JSX.Element {
       <Pressable testID="guard-home-scan-button" onPress={() => router.push('/scan')}>
         <Text>Escanear QR</Text>
       </Pressable>
+      <Pressable
+        testID="guard-home-manual-entry-button"
+        onPress={() => router.push('/manualEntry')}
+      >
+        <Text>Registro manual</Text>
+      </Pressable>
     </View>
   );
 }

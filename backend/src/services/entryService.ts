@@ -5,16 +5,60 @@ import type { EntryRecord } from '../db/entries';
 import { findInvitationById, markInvitationUsed } from '../db/invitations';
 import type { InvitationRecord } from '../db/invitations';
 import { findResidentById } from '../db/residents';
+import { findUnitByLabel } from '../db/units';
 import {
+  InvalidManualEntryInputError,
   InvitationAlreadyUsedError,
   InvitationExpiredError,
   InvitationNotFoundError,
   InvitationNotYetValidError,
+  UnitNotFoundError,
 } from './errors';
 import { sendExpoPushNotification } from './pushService';
 
 export function listEntryHistoryForResident(db: DatabaseSync, residentId: number): EntryRecord[] {
   return findEntriesByResidentId(db, residentId);
+}
+
+export interface CreateManualEntryInput {
+  visitorName: unknown;
+  unitLabel: unknown;
+}
+
+function assertValidVisitorName(visitorName: unknown): string {
+  if (typeof visitorName !== 'string' || visitorName.trim().length === 0) {
+    throw new InvalidManualEntryInputError('visitorName es requerido y no puede estar vacío');
+  }
+  return visitorName.trim();
+}
+
+function assertValidUnitLabel(unitLabel: unknown): string {
+  if (typeof unitLabel !== 'string' || unitLabel.trim().length === 0) {
+    throw new InvalidManualEntryInputError('unitLabel es requerido y no puede estar vacío');
+  }
+  return unitLabel.trim();
+}
+
+export function createManualEntry(
+  db: DatabaseSync,
+  guardId: number,
+  input: CreateManualEntryInput,
+): EntryRecord {
+  const visitorName = assertValidVisitorName(input.visitorName);
+  const unitLabel = assertValidUnitLabel(input.unitLabel);
+
+  const unit = findUnitByLabel(db, unitLabel);
+  if (!unit) {
+    throw new UnitNotFoundError('La unidad indicada no existe');
+  }
+
+  return insertEntry(db, {
+    invitationId: null,
+    unitId: unit.id,
+    guardId,
+    visitorName,
+    isManual: true,
+  });
 }
 
 export interface ConfirmInvitationEntryResult {

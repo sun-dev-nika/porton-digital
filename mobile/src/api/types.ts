@@ -71,3 +71,22 @@ export interface ValidateInvitationByCodeResponse {
   status: InvitationValidationStatus;
   invitation: InvitationValidationSummary | null;
 }
+
+export interface Entry {
+  id: number;
+  invitationId: number | null;
+  unitId: number;
+  guardId: number;
+  visitorName: string;
+  isManual: boolean;
+  enteredAt: string;
+}
+
+export interface CreateManualEntryInput {
+  visitorName: string;
+  unitLabel: string;
+}
+
+export interface CreateManualEntryResponse {
+  entry: Entry;
+}

@@ -11,12 +11,18 @@ import { findGuardByEmail } from '../../src/db/guards';
 import { findResidentByEmail } from '../../src/db/residents';
 import { seedDevelopmentData } from '../../src/db/seed';
 import {
+  InvalidManualEntryInputError,
   InvitationAlreadyUsedError,
   InvitationExpiredError,
   InvitationNotFoundError,
   InvitationNotYetValidError,
+  UnitNotFoundError,
 } from '../../src/services/errors';
-import { confirmInvitationEntry, listEntryHistoryForResident } from '../../src/services/entryService';
+import {
+  confirmInvitationEntry,
+  createManualEntry,
+  listEntryHistoryForResident,
+} from '../../src/services/entryService';
 
 describe('entryService.listEntryHistoryForResident', () => {
   let tempDir: string;
@@ -401,5 +407,76 @@ describe('entryService.confirmInvitationEntry', () => {
 
     expect(result.invitation.usedAt).not.toBeNull();
     expect(result.entry.invitationId).toBe(invitationId);
+  });
+});
+
+describe('entryService.createManualEntry', () => {
+  let tempDir: string;
+  let dbPath: string;
+  let db: DatabaseSync;
+  let guardId: number;
+  let unitId: number;
+
+  beforeEach(() => {
+    tempDir = mkdtempSync(join(tmpdir(), 'porton-digital-manual-entry-service-'));
+    dbPath = join(tempDir, 'manual-entry-service-test.sqlite');
+    db = createDatabase(dbPath);
+    seedDevelopmentData(db);
+
+    const guard = findGuardByEmail(db, 'guard@dev.local')!;
+    guardId = guard.id;
+
+    const resident = findResidentByEmail(db, 'resident@dev.local')!;
+    unitId = resident.unitId;
+  });
+
+  afterEach(() => {
+    db.close();
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it('crea un entry con invitationId null, isManual true y unitId resuelto desde el unitLabel sembrado (R1)', () => {
+    const entry = createManualEntry(db, guardId, {
+      visitorName: 'Visita Manual',
+      unitLabel: '101',
+    });
+
+    expect(entry).toMatchObject({
+      invitationId: null,
+      unitId,
+      guardId,
+      visitorName: 'Visita Manual',
+      isManual: true,
+    });
+  });
+
+  it('lanza InvalidManualEntryInputError para un visitorName vacío (R2)', () => {
+    expect(() => createManualEntry(db, guardId, { visitorName: '   ', unitLabel: '101' })).toThrow(
+      InvalidManualEntryInputError,
+    );
+  });
+
+  it('lanza InvalidManualEntryInputError para un visitorName no-string (R2)', () => {
+    expect(() => createManualEntry(db, guardId, { visitorName: 123, unitLabel: '101' })).toThrow(
+      InvalidManualEntryInputError,
+    );
+  });
+
+  it('lanza InvalidManualEntryInputError para un unitLabel vacío (R3)', () => {
+    expect(() =>
+      createManualEntry(db, guardId, { visitorName: 'Visita Manual', unitLabel: '   ' }),
+    ).toThrow(InvalidManualEntryInputError);
+  });
+
+  it('lanza InvalidManualEntryInputError para un unitLabel no-string (R3)', () => {
+    expect(() =>
+      createManualEntry(db, guardId, { visitorName: 'Visita Manual', unitLabel: 202 }),
+    ).toThrow(InvalidManualEntryInputError);
+  });
+
+  it('lanza UnitNotFoundError para un unitLabel inexistente (R4)', () => {
+    expect(() =>
+      createManualEntry(db, guardId, { visitorName: 'Visita Manual', unitLabel: 'unidad-inexistente' }),
+    ).toThrow(UnitNotFoundError);
   });
 });
