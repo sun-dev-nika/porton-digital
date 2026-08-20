@@ -19,6 +19,7 @@ import {
   generateInvitationCode,
   getInvitationForResident,
   listInvitationsForResident,
+  validateInvitationByCode,
 } from '../../src/services/invitationService';
 import type { InvitationRecord } from '../../src/db/invitations';
 
@@ -274,5 +275,97 @@ describe('invitationService.getInvitationForResident', () => {
     expect(() => getInvitationForResident(db, residentId, 999999)).toThrow(
       InvitationNotFoundError,
     );
+  });
+});
+
+describe('invitationService.validateInvitationByCode', () => {
+  let tempDir: string;
+  let dbPath: string;
+  let db: DatabaseSync;
+  let residentId: number;
+
+  beforeEach(() => {
+    tempDir = mkdtempSync(join(tmpdir(), 'porton-digital-validate-invitation-service-'));
+    dbPath = join(tempDir, 'validate-invitation-service-test.sqlite');
+    db = createDatabase(dbPath);
+    seedDevelopmentData(db);
+    const resident = findResidentByEmail(db, 'resident@dev.local');
+    residentId = resident!.id;
+  });
+
+  afterEach(() => {
+    db.close();
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it('devuelve status valid para una invitación activa (usedAt nulo, validFrom pasado, validUntil futuro)', () => {
+    const invitation = createInvitation(db, residentId, {
+      visitorName: 'Visita Activa',
+      validFrom: '2026-01-01T10:00:00.000Z',
+      validUntil: '2026-01-01T12:00:00.000Z',
+    });
+    const now = new Date('2026-01-01T11:00:00.000Z');
+
+    const result = validateInvitationByCode(db, invitation.code, now);
+
+    expect(result).toEqual({
+      status: 'valid',
+      invitation: {
+        id: invitation.id,
+        visitorName: 'Visita Activa',
+        validFrom: '2026-01-01T10:00:00.000Z',
+        validUntil: '2026-01-01T12:00:00.000Z',
+      },
+    });
+  });
+
+  it('devuelve status not_yet_valid para una invitación con validFrom futuro, sin importar validUntil', () => {
+    const invitation = createInvitation(db, residentId, {
+      visitorName: 'Visita Futura',
+      validFrom: '2026-06-01T10:00:00.000Z',
+      validUntil: '2026-06-01T12:00:00.000Z',
+    });
+    const now = new Date('2026-01-01T00:00:00.000Z');
+
+    const result = validateInvitationByCode(db, invitation.code, now);
+
+    expect(result.status).toBe('not_yet_valid');
+    expect(result.invitation).toMatchObject({ id: invitation.id, visitorName: 'Visita Futura' });
+  });
+
+  it('devuelve status used para una invitación marcada usada, incluso con validFrom futuro o validUntil pasado', () => {
+    const invitation = createInvitation(db, residentId, {
+      visitorName: 'Visita Usada',
+      validFrom: '2020-01-01T10:00:00.000Z',
+      validUntil: '2020-01-01T12:00:00.000Z',
+    });
+    db.prepare('UPDATE invitations SET usedAt = ? WHERE id = ?').run(
+      '2020-01-01T11:00:00.000Z',
+      invitation.id,
+    );
+    const now = new Date('2026-01-01T00:00:00.000Z');
+
+    const result = validateInvitationByCode(db, invitation.code, now);
+
+    expect(result.status).toBe('used');
+  });
+
+  it('devuelve status expired para una invitación no usada con validUntil pasado', () => {
+    const invitation = createInvitation(db, residentId, {
+      visitorName: 'Visita Vencida',
+      validFrom: '2020-01-01T10:00:00.000Z',
+      validUntil: '2020-01-01T12:00:00.000Z',
+    });
+    const now = new Date('2026-01-01T00:00:00.000Z');
+
+    const result = validateInvitationByCode(db, invitation.code, now);
+
+    expect(result.status).toBe('expired');
+  });
+
+  it('devuelve status not_found con invitation null para un code inexistente', () => {
+    const result = validateInvitationByCode(db, 'CODIGOINEXIST', new Date('2026-01-01T00:00:00.000Z'));
+
+    expect(result).toEqual({ status: 'not_found', invitation: null });
   });
 });

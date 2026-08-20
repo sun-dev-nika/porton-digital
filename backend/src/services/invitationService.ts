@@ -142,3 +142,51 @@ export function getInvitationForResident(
   }
   return { ...invitation, status: deriveInvitationStatus(invitation, now) };
 }
+
+export type InvitationValidationStatus =
+  | 'valid'
+  | 'not_yet_valid'
+  | 'used'
+  | 'expired'
+  | 'not_found';
+
+export interface InvitationValidationSummary {
+  id: number;
+  visitorName: string;
+  validFrom: string;
+  validUntil: string;
+}
+
+export interface InvitationValidationResult {
+  status: InvitationValidationStatus;
+  invitation: InvitationValidationSummary | null;
+}
+
+export function validateInvitationByCode(
+  db: DatabaseSync,
+  code: string,
+  now: Date = new Date(),
+): InvitationValidationResult {
+  const invitation = findInvitationByCode(db, code);
+  if (!invitation) {
+    return { status: 'not_found', invitation: null };
+  }
+
+  let status: InvitationValidationStatus;
+  if (invitation.usedAt === null && now.getTime() < Date.parse(invitation.validFrom)) {
+    status = 'not_yet_valid';
+  } else {
+    const derivedStatus = deriveInvitationStatus(invitation, now);
+    status = derivedStatus === 'pending' ? 'valid' : derivedStatus;
+  }
+
+  return {
+    status,
+    invitation: {
+      id: invitation.id,
+      visitorName: invitation.visitorName,
+      validFrom: invitation.validFrom,
+      validUntil: invitation.validUntil,
+    },
+  };
+}

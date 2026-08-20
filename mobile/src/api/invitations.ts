@@ -4,6 +4,7 @@ import type {
   CreateInvitationResponse,
   GetInvitationResponse,
   ListInvitationsResponse,
+  ValidateInvitationByCodeResponse,
 } from './types';
 
 export function createInvitation(input: CreateInvitationInput): Promise<CreateInvitationResponse> {
@@ -19,4 +20,12 @@ export function listInvitations(): Promise<ListInvitationsResponse> {
 
 export function getInvitation(id: number): Promise<GetInvitationResponse> {
   return request<GetInvitationResponse>(`/invitations/${id}`);
+}
+
+export function validateInvitationByCode(
+  code: string,
+): Promise<ValidateInvitationByCodeResponse> {
+  return request<ValidateInvitationByCodeResponse>(
+    `/invitations/by-code/${encodeURIComponent(code)}`,
+  );
 }

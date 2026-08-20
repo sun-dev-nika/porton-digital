@@ -8,6 +8,7 @@ import {
   createInvitation,
   getInvitationForResident,
   listInvitationsForResident,
+  validateInvitationByCode,
 } from '../services/invitationService';
 import type { CreateInvitationInput } from '../services/invitationService';
 import {
@@ -52,6 +53,11 @@ export function createInvitationRouter(db: DatabaseSync): Router {
   router.get('/', requireAuth, requireRole('resident'), (req, res) => {
     const invitations = listInvitationsForResident(db, req.user!.id);
     res.status(200).json({ invitations });
+  });
+
+  router.get('/by-code/:code', requireAuth, requireRole('guard'), (req, res) => {
+    const result = validateInvitationByCode(db, req.params.code ?? '');
+    res.status(200).json(result);
   });
 
   router.get('/:id', requireAuth, requireRole('resident'), (req, res) => {

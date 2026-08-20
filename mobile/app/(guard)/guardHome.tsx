@@ -1,9 +1,5 @@
-import { Text, View } from 'react-native';
+import { GuardHomeScreen } from '../../src/screens/GuardHomeScreen';
 
 export default function GuardHome(): JSX.Element {
-  return (
-    <View>
-      <Text testID="guard-home-title">Panel de guardia</Text>
-    </View>
-  );
+  return <GuardHomeScreen />;
 }

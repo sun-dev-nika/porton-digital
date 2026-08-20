@@ -1,6 +1,11 @@
 import * as SecureStore from 'expo-secure-store';
 
-import { createInvitation, getInvitation, listInvitations } from '../../src/api/invitations';
+import {
+  createInvitation,
+  getInvitation,
+  listInvitations,
+  validateInvitationByCode,
+} from '../../src/api/invitations';
 
 jest.mock('expo-secure-store', () => ({
   getItemAsync: jest.fn(),
@@ -116,6 +121,39 @@ describe('getInvitation', () => {
     expect(result).toEqual(detailResponse);
     const [url, init] = (global.fetch as jest.Mock).mock.calls[0];
     expect(url).toBe('http://localhost:3000/invitations/1');
+    expect(init.method).toBe('GET');
+    expect(init.body).toBeUndefined();
+  });
+});
+
+describe('validateInvitationByCode', () => {
+  const secureStore = SecureStore as jest.Mocked<typeof SecureStore>;
+
+  beforeEach(() => {
+    jest.resetAllMocks();
+    global.fetch = jest.fn();
+  });
+
+  it('llama a GET /invitations/by-code/<code-codificado> sin method ni body explícitos y propaga el resultado tipado', async () => {
+    secureStore.getItemAsync.mockResolvedValue('stored-jwt-token');
+    const validationResponse = {
+      status: 'valid',
+      invitation: {
+        id: 1,
+        visitorName: 'Juan Pérez',
+        validFrom: '2026-01-01T10:00:00.000Z',
+        validUntil: '2026-01-01T12:00:00.000Z',
+      },
+    };
+    (global.fetch as jest.Mock).mockResolvedValue(jsonResponse(200, validationResponse));
+
+    const result = await validateInvitationByCode('CODE WITH SPACE/SLASH');
+
+    expect(result).toEqual(validationResponse);
+    const [url, init] = (global.fetch as jest.Mock).mock.calls[0];
+    expect(url).toBe(
+      `http://localhost:3000/invitations/by-code/${encodeURIComponent('CODE WITH SPACE/SLASH')}`,
+    );
     expect(init.method).toBe('GET');
     expect(init.body).toBeUndefined();
   });

@@ -52,3 +52,22 @@ export interface ResidentEntry {
 export interface ListResidentEntriesResponse {
   entries: ResidentEntry[];
 }
+
+export type InvitationValidationStatus =
+  | 'valid'
+  | 'not_yet_valid'
+  | 'used'
+  | 'expired'
+  | 'not_found';
+
+export interface InvitationValidationSummary {
+  id: number;
+  visitorName: string;
+  validFrom: string;
+  validUntil: string;
+}
+
+export interface ValidateInvitationByCodeResponse {
+  status: InvitationValidationStatus;
+  invitation: InvitationValidationSummary | null;
+}

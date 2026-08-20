@@ -429,3 +429,137 @@ describe('GET /invitations/:id', () => {
     expect(response.status).toBe(403);
   });
 });
+
+describe('GET /invitations/by-code/:code', () => {
+  let tempDir: string;
+  let dbPath: string;
+  let db: DatabaseSync;
+  let app: Express;
+  let residentToken: string;
+  let guardToken: string;
+
+  beforeEach(() => {
+    tempDir = mkdtempSync(join(tmpdir(), 'porton-digital-getinvitationbycode-'));
+    dbPath = join(tempDir, 'getinvitationbycode-test.sqlite');
+    db = createDatabase(dbPath);
+    seedDevelopmentData(db);
+    app = createApp(db);
+
+    const resident = findResidentByEmail(db, 'resident@dev.local')!;
+    residentToken = sign({ id: resident.id, role: 'resident' }, JWT_SECRET);
+
+    const guard = findGuardByEmail(db, 'guard@dev.local')!;
+    guardToken = sign({ id: guard.id, role: 'guard' }, JWT_SECRET);
+  });
+
+  afterEach(() => {
+    db.close();
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it('devuelve 200 status valid para una invitación con ventana que ya empezó y no ha terminado', async () => {
+    const createResponse = await request(app)
+      .post('/invitations')
+      .set('Authorization', `Bearer ${residentToken}`)
+      .send({
+        visitorName: 'Visita Activa',
+        validFrom: '2020-01-01T10:00:00.000Z',
+        validUntil: '2099-01-01T12:00:00.000Z',
+      });
+    const code = createResponse.body.invitation.code as string;
+
+    const response = await request(app)
+      .get(`/invitations/by-code/${code}`)
+      .set('Authorization', `Bearer ${guardToken}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.status).toBe('valid');
+    expect(response.body.invitation).toMatchObject({ visitorName: 'Visita Activa' });
+  });
+
+  it('devuelve 200 status not_yet_valid para una invitación creada con validFrom futuro', async () => {
+    const createResponse = await request(app)
+      .post('/invitations')
+      .set('Authorization', `Bearer ${residentToken}`)
+      .send({
+        visitorName: 'Visita Futura',
+        validFrom: '2099-01-01T10:00:00.000Z',
+        validUntil: '2099-01-01T12:00:00.000Z',
+      });
+    const code = createResponse.body.invitation.code as string;
+
+    const response = await request(app)
+      .get(`/invitations/by-code/${code}`)
+      .set('Authorization', `Bearer ${guardToken}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.status).toBe('not_yet_valid');
+  });
+
+  it('devuelve 200 status used tras marcar usedAt directo por SQL', async () => {
+    const createResponse = await request(app)
+      .post('/invitations')
+      .set('Authorization', `Bearer ${residentToken}`)
+      .send({
+        visitorName: 'Visita Usada',
+        validFrom: '2020-01-01T10:00:00.000Z',
+        validUntil: '2099-01-01T12:00:00.000Z',
+      });
+    const invitationId = createResponse.body.invitation.id;
+    const code = createResponse.body.invitation.code as string;
+
+    db.prepare('UPDATE invitations SET usedAt = ? WHERE id = ?').run(
+      new Date().toISOString(),
+      invitationId,
+    );
+
+    const response = await request(app)
+      .get(`/invitations/by-code/${code}`)
+      .set('Authorization', `Bearer ${guardToken}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.status).toBe('used');
+  });
+
+  it('devuelve 200 status expired para una invitación con validUntil pasado', async () => {
+    const createResponse = await request(app)
+      .post('/invitations')
+      .set('Authorization', `Bearer ${residentToken}`)
+      .send({
+        visitorName: 'Visita Vencida',
+        validFrom: '2020-01-01T10:00:00.000Z',
+        validUntil: '2020-01-01T12:00:00.000Z',
+      });
+    const code = createResponse.body.invitation.code as string;
+
+    const response = await request(app)
+      .get(`/invitations/by-code/${code}`)
+      .set('Authorization', `Bearer ${guardToken}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.status).toBe('expired');
+  });
+
+  it('devuelve 200 status not_found con invitation null para un code inexistente', async () => {
+    const response = await request(app)
+      .get('/invitations/by-code/NOEXISTE1234')
+      .set('Authorization', `Bearer ${guardToken}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ status: 'not_found', invitation: null });
+  });
+
+  it('rechaza con 401 sin token de autenticación', async () => {
+    const response = await request(app).get('/invitations/by-code/NOEXISTE1234');
+
+    expect(response.status).toBe(401);
+  });
+
+  it('rechaza con 403 un token de rol resident', async () => {
+    const response = await request(app)
+      .get('/invitations/by-code/NOEXISTE1234')
+      .set('Authorization', `Bearer ${residentToken}`);
+
+    expect(response.status).toBe(403);
+  });
+});
