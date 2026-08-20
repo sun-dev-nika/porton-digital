@@ -41,3 +41,14 @@ export interface ListInvitationsResponse {
 export interface GetInvitationResponse {
   invitation: InvitationWithStatus;
 }
+
+export interface ResidentEntry {
+  id: number;
+  invitationId: number | null;
+  visitorName: string;
+  enteredAt: string;
+}
+
+export interface ListResidentEntriesResponse {
+  entries: ResidentEntry[];
+}
