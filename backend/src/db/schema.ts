@@ -13,6 +13,7 @@ export const CREATE_RESIDENTS_TABLE = `
     fullName TEXT NOT NULL,
     email TEXT NOT NULL UNIQUE,
     passwordHash TEXT NOT NULL,
+    pushToken TEXT,
     createdAt TEXT NOT NULL DEFAULT (datetime('now')),
     FOREIGN KEY (unitId) REFERENCES units (id)
   )

@@ -62,6 +62,15 @@ export function findInvitationByCode(db: DatabaseSync, code: string): Invitation
   return row as unknown as InvitationRecord | undefined;
 }
 
+export function markInvitationUsed(
+  db: DatabaseSync,
+  id: number,
+  usedAt: string,
+): InvitationRecord {
+  db.prepare('UPDATE invitations SET usedAt = ? WHERE id = ?').run(usedAt, id);
+  return findInvitationById(db, id)!;
+}
+
 export function findInvitationsByResidentId(
   db: DatabaseSync,
   residentId: number,

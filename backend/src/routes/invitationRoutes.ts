@@ -4,6 +4,7 @@ import type { DatabaseSync } from 'node:sqlite';
 
 import { requireAuth } from '../middleware/requireAuth';
 import { requireRole } from '../middleware/requireRole';
+import { confirmInvitationEntry } from '../services/entryService';
 import {
   createInvitation,
   getInvitationForResident,
@@ -15,7 +16,10 @@ import {
   InvalidInvitationInputError,
   InvalidInvitationWindowError,
   InvitationAccessDeniedError,
+  InvitationAlreadyUsedError,
+  InvitationExpiredError,
   InvitationNotFoundError,
+  InvitationNotYetValidError,
   ResidentNotFoundError,
 } from '../services/errors';
 
@@ -58,6 +62,36 @@ export function createInvitationRouter(db: DatabaseSync): Router {
   router.get('/by-code/:code', requireAuth, requireRole('guard'), (req, res) => {
     const result = validateInvitationByCode(db, req.params.code ?? '');
     res.status(200).json(result);
+  });
+
+  router.post('/:id/confirm-entry', requireAuth, requireRole('guard'), async (req, res) => {
+    const id = Number(req.params.id);
+
+    try {
+      if (Number.isNaN(id)) {
+        throw new InvitationNotFoundError('La invitación solicitada no existe');
+      }
+      const result = await confirmInvitationEntry(db, req.user!.id, id);
+      res.status(200).json(result);
+    } catch (error) {
+      if (error instanceof InvitationNotFoundError) {
+        res.status(404).json({ error: error.message });
+        return;
+      }
+      if (error instanceof InvitationAlreadyUsedError) {
+        res.status(409).json({ error: error.message, reason: 'used' });
+        return;
+      }
+      if (error instanceof InvitationExpiredError) {
+        res.status(409).json({ error: error.message, reason: 'expired' });
+        return;
+      }
+      if (error instanceof InvitationNotYetValidError) {
+        res.status(409).json({ error: error.message, reason: 'not_yet_valid' });
+        return;
+      }
+      throw error;
+    }
   });
 
   router.get('/:id', requireAuth, requireRole('resident'), (req, res) => {

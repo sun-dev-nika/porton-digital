@@ -1,7 +1,9 @@
+import { createServer } from 'node:http';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import type { IncomingMessage, Server, ServerResponse } from 'node:http';
 import type { DatabaseSync } from 'node:sqlite';
 
 import type { Express } from 'express';
@@ -561,5 +563,214 @@ describe('GET /invitations/by-code/:code', () => {
       .set('Authorization', `Bearer ${residentToken}`);
 
     expect(response.status).toBe(403);
+  });
+});
+
+function startStubServer(
+  handler: (req: IncomingMessage, res: ServerResponse, body: string) => void,
+): Promise<{ server: Server; baseUrl: string }> {
+  return new Promise((resolve) => {
+    const server = createServer((req, res) => {
+      let body = '';
+      req.on('data', (chunk) => {
+        body += chunk;
+      });
+      req.on('end', () => {
+        handler(req, res, body);
+      });
+    });
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address();
+      const port = typeof address === 'object' && address !== null ? address.port : 0;
+      resolve({ server, baseUrl: `http://127.0.0.1:${port}/push` });
+    });
+  });
+}
+
+function closeServer(server: Server): Promise<void> {
+  return new Promise((resolve) => {
+    server.close(() => resolve());
+  });
+}
+
+describe('POST /invitations/:id/confirm-entry', () => {
+  let tempDir: string;
+  let dbPath: string;
+  let db: DatabaseSync;
+  let app: Express;
+  let residentToken: string;
+  let guardToken: string;
+  let residentId: number;
+  let stubServer: Server | undefined;
+  const previousExpoPushApiUrl = process.env.EXPO_PUSH_API_URL;
+
+  beforeEach(() => {
+    tempDir = mkdtempSync(join(tmpdir(), 'porton-digital-confirmentry-'));
+    dbPath = join(tempDir, 'confirmentry-test.sqlite');
+    db = createDatabase(dbPath);
+    seedDevelopmentData(db);
+    app = createApp(db);
+
+    const resident = findResidentByEmail(db, 'resident@dev.local')!;
+    residentId = resident.id;
+    residentToken = sign({ id: resident.id, role: 'resident' }, JWT_SECRET);
+
+    const guard = findGuardByEmail(db, 'guard@dev.local')!;
+    guardToken = sign({ id: guard.id, role: 'guard' }, JWT_SECRET);
+  });
+
+  afterEach(async () => {
+    if (stubServer) {
+      await closeServer(stubServer);
+      stubServer = undefined;
+    }
+    if (previousExpoPushApiUrl === undefined) {
+      delete process.env.EXPO_PUSH_API_URL;
+    } else {
+      process.env.EXPO_PUSH_API_URL = previousExpoPushApiUrl;
+    }
+    db.close();
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  async function createInvitationWithWindow(validFrom: string, validUntil: string): Promise<number> {
+    const createResponse = await request(app)
+      .post('/invitations')
+      .set('Authorization', `Bearer ${residentToken}`)
+      .send({
+        visitorName: 'Visita Confirmable',
+        validFrom,
+        validUntil,
+      });
+    return createResponse.body.invitation.id as number;
+  }
+
+  it('devuelve 200 con la invitación marcada usada y el entry creado (R1)', async () => {
+    const invitationId = await createInvitationWithWindow(
+      '2020-01-01T10:00:00.000Z',
+      '2099-01-01T12:00:00.000Z',
+    );
+
+    const response = await request(app)
+      .post(`/invitations/${invitationId}/confirm-entry`)
+      .set('Authorization', `Bearer ${guardToken}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.invitation.usedAt).not.toBeNull();
+    expect(response.body.entry).toMatchObject({
+      invitationId,
+      visitorName: 'Visita Confirmable',
+      isManual: false,
+    });
+  });
+
+  it('rechaza con 404 cuando el id no corresponde a ninguna invitación existente (R2)', async () => {
+    const response = await request(app)
+      .post('/invitations/999999/confirm-entry')
+      .set('Authorization', `Bearer ${guardToken}`);
+
+    expect(response.status).toBe(404);
+  });
+
+  it("rechaza con 409 reason 'used' tras marcar usedAt por SQL directo (R3)", async () => {
+    const invitationId = await createInvitationWithWindow(
+      '2020-01-01T10:00:00.000Z',
+      '2099-01-01T12:00:00.000Z',
+    );
+    db.prepare('UPDATE invitations SET usedAt = ? WHERE id = ?').run(
+      new Date().toISOString(),
+      invitationId,
+    );
+
+    const response = await request(app)
+      .post(`/invitations/${invitationId}/confirm-entry`)
+      .set('Authorization', `Bearer ${guardToken}`);
+
+    expect(response.status).toBe(409);
+    expect(response.body.reason).toBe('used');
+  });
+
+  it("rechaza con 409 reason 'expired' para una invitación con validUntil pasado (R4)", async () => {
+    const invitationId = await createInvitationWithWindow(
+      '2020-01-01T10:00:00.000Z',
+      '2020-01-01T12:00:00.000Z',
+    );
+
+    const response = await request(app)
+      .post(`/invitations/${invitationId}/confirm-entry`)
+      .set('Authorization', `Bearer ${guardToken}`);
+
+    expect(response.status).toBe(409);
+    expect(response.body.reason).toBe('expired');
+  });
+
+  it("rechaza con 409 reason 'not_yet_valid' para una invitación con validFrom futuro (R5)", async () => {
+    const invitationId = await createInvitationWithWindow(
+      '2099-01-01T10:00:00.000Z',
+      '2099-01-01T12:00:00.000Z',
+    );
+
+    const response = await request(app)
+      .post(`/invitations/${invitationId}/confirm-entry`)
+      .set('Authorization', `Bearer ${guardToken}`);
+
+    expect(response.status).toBe(409);
+    expect(response.body.reason).toBe('not_yet_valid');
+  });
+
+  it('rechaza con 401 sin token de autenticación (R6)', async () => {
+    const invitationId = await createInvitationWithWindow(
+      '2020-01-01T10:00:00.000Z',
+      '2099-01-01T12:00:00.000Z',
+    );
+
+    const response = await request(app).post(`/invitations/${invitationId}/confirm-entry`);
+
+    expect(response.status).toBe(401);
+  });
+
+  it('rechaza con 403 un token de rol resident (R7)', async () => {
+    const invitationId = await createInvitationWithWindow(
+      '2020-01-01T10:00:00.000Z',
+      '2099-01-01T12:00:00.000Z',
+    );
+
+    const response = await request(app)
+      .post(`/invitations/${invitationId}/confirm-entry`)
+      .set('Authorization', `Bearer ${residentToken}`);
+
+    expect(response.status).toBe(403);
+  });
+
+  it('con pushToken fijado y EXPO_PUSH_API_URL apuntando al stub, el stub recibe la petición durante la llamada end-to-end (R8, R11)', async () => {
+    let receivedBody: unknown;
+    const started = await startStubServer((_req, res, body) => {
+      receivedBody = JSON.parse(body);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ data: [{ status: 'ok', id: 'stub-id' }] }));
+    });
+    stubServer = started.server;
+    process.env.EXPO_PUSH_API_URL = started.baseUrl;
+
+    db.prepare('UPDATE residents SET pushToken = ? WHERE id = ?').run(
+      'ExponentPushToken[resident-token]',
+      residentId,
+    );
+    const invitationId = await createInvitationWithWindow(
+      '2020-01-01T10:00:00.000Z',
+      '2099-01-01T12:00:00.000Z',
+    );
+
+    const response = await request(app)
+      .post(`/invitations/${invitationId}/confirm-entry`)
+      .set('Authorization', `Bearer ${guardToken}`);
+
+    expect(response.status).toBe(200);
+    expect(receivedBody).toEqual([
+      expect.objectContaining({
+        to: 'ExponentPushToken[resident-token]',
+        data: { invitationId },
+      }),
+    ]);
   });
 });

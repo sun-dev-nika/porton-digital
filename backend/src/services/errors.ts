@@ -13,3 +13,9 @@ export class InvitationCodeGenerationError extends DomainError {}
 export class InvitationNotFoundError extends DomainError {}
 
 export class InvitationAccessDeniedError extends DomainError {}
+
+export class InvitationAlreadyUsedError extends DomainError {}
+
+export class InvitationExpiredError extends DomainError {}
+
+export class InvitationNotYetValidError extends DomainError {}

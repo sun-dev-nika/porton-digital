@@ -10,6 +10,31 @@ export interface EntryRecord {
   enteredAt: string;
 }
 
+export interface NewEntryInput {
+  invitationId: number | null;
+  unitId: number;
+  guardId: number;
+  visitorName: string;
+  isManual: boolean;
+}
+
+export function insertEntry(db: DatabaseSync, input: NewEntryInput): EntryRecord {
+  const result = db
+    .prepare(
+      'INSERT INTO entries (invitationId, unitId, guardId, visitorName, isManual) VALUES (?, ?, ?, ?, ?)',
+    )
+    .run(input.invitationId, input.unitId, input.guardId, input.visitorName, input.isManual ? 1 : 0);
+
+  const row = db
+    .prepare(
+      'SELECT id, invitationId, unitId, guardId, visitorName, isManual, enteredAt FROM entries WHERE id = ?',
+    )
+    .get(result.lastInsertRowid);
+  const rawEntry = row as unknown as EntryRecord;
+
+  return { ...rawEntry, isManual: Boolean((row as unknown as { isManual: number }).isManual) };
+}
+
 export function findEntriesByResidentId(db: DatabaseSync, residentId: number): EntryRecord[] {
   const rows = db
     .prepare(

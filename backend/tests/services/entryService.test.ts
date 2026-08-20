@@ -1,14 +1,22 @@
+import { createServer } from 'node:http';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import type { IncomingMessage, Server, ServerResponse } from 'node:http';
 import type { DatabaseSync } from 'node:sqlite';
 
 import { createDatabase } from '../../src/db/createDatabase';
 import { findGuardByEmail } from '../../src/db/guards';
 import { findResidentByEmail } from '../../src/db/residents';
 import { seedDevelopmentData } from '../../src/db/seed';
-import { listEntryHistoryForResident } from '../../src/services/entryService';
+import {
+  InvitationAlreadyUsedError,
+  InvitationExpiredError,
+  InvitationNotFoundError,
+  InvitationNotYetValidError,
+} from '../../src/services/errors';
+import { confirmInvitationEntry, listEntryHistoryForResident } from '../../src/services/entryService';
 
 describe('entryService.listEntryHistoryForResident', () => {
   let tempDir: string;
@@ -180,5 +188,218 @@ describe('entryService.listEntryHistoryForResident', () => {
     const result = listEntryHistoryForResident(db, residentId);
 
     expect(result).toEqual([]);
+  });
+});
+
+function startStubServer(
+  handler: (req: IncomingMessage, res: ServerResponse, body: string) => void,
+): Promise<{ server: Server; baseUrl: string }> {
+  return new Promise((resolve) => {
+    const server = createServer((req, res) => {
+      let body = '';
+      req.on('data', (chunk) => {
+        body += chunk;
+      });
+      req.on('end', () => {
+        handler(req, res, body);
+      });
+    });
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address();
+      const port = typeof address === 'object' && address !== null ? address.port : 0;
+      resolve({ server, baseUrl: `http://127.0.0.1:${port}/push` });
+    });
+  });
+}
+
+function closeServer(server: Server): Promise<void> {
+  return new Promise((resolve) => {
+    server.close(() => resolve());
+  });
+}
+
+describe('entryService.confirmInvitationEntry', () => {
+  let tempDir: string;
+  let dbPath: string;
+  let db: DatabaseSync;
+  let residentId: number;
+  let unitId: number;
+  let guardId: number;
+  let stubServer: Server | undefined;
+  const previousExpoPushApiUrl = process.env.EXPO_PUSH_API_URL;
+
+  beforeEach(() => {
+    tempDir = mkdtempSync(join(tmpdir(), 'porton-digital-confirm-entry-service-'));
+    dbPath = join(tempDir, 'confirm-entry-service-test.sqlite');
+    db = createDatabase(dbPath);
+    seedDevelopmentData(db);
+
+    const resident = findResidentByEmail(db, 'resident@dev.local')!;
+    residentId = resident.id;
+    unitId = resident.unitId;
+
+    const guard = findGuardByEmail(db, 'guard@dev.local')!;
+    guardId = guard.id;
+  });
+
+  afterEach(async () => {
+    if (stubServer) {
+      await closeServer(stubServer);
+      stubServer = undefined;
+    }
+    if (previousExpoPushApiUrl === undefined) {
+      delete process.env.EXPO_PUSH_API_URL;
+    } else {
+      process.env.EXPO_PUSH_API_URL = previousExpoPushApiUrl;
+    }
+    db.close();
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  function insertInvitation(params: { validFrom: string; validUntil: string; visitorName?: string }): number {
+    const visitorName = params.visitorName ?? 'Visita Confirmable';
+    return db
+      .prepare(
+        'INSERT INTO invitations (code, residentId, unitId, visitorName, validFrom, validUntil) VALUES (?, ?, ?, ?, ?, ?)',
+      )
+      .run(`CODE-${Date.now()}-${Math.random()}`, residentId, unitId, visitorName, params.validFrom, params.validUntil)
+      .lastInsertRowid as number;
+  }
+
+  it('marca usedAt y crea el entry esperado para una invitación activa (R1)', async () => {
+    const invitationId = insertInvitation({
+      validFrom: '2020-01-01T10:00:00.000Z',
+      validUntil: '2099-01-01T12:00:00.000Z',
+      visitorName: 'Visita Activa',
+    });
+
+    const result = await confirmInvitationEntry(db, guardId, invitationId);
+
+    expect(result.invitation.usedAt).not.toBeNull();
+    expect(result.entry).toMatchObject({
+      invitationId,
+      unitId,
+      guardId,
+      visitorName: 'Visita Activa',
+      isManual: false,
+    });
+  });
+
+  it('lanza InvitationNotFoundError para un id inexistente (R2)', async () => {
+    await expect(confirmInvitationEntry(db, guardId, 999999)).rejects.toBeInstanceOf(
+      InvitationNotFoundError,
+    );
+  });
+
+  it('lanza InvitationAlreadyUsedError para una invitación ya usada (R3)', async () => {
+    const invitationId = insertInvitation({
+      validFrom: '2020-01-01T10:00:00.000Z',
+      validUntil: '2099-01-01T12:00:00.000Z',
+    });
+    db.prepare('UPDATE invitations SET usedAt = ? WHERE id = ?').run(
+      new Date().toISOString(),
+      invitationId,
+    );
+
+    await expect(confirmInvitationEntry(db, guardId, invitationId)).rejects.toBeInstanceOf(
+      InvitationAlreadyUsedError,
+    );
+  });
+
+  it('lanza InvitationExpiredError para una invitación con validUntil pasado (R4)', async () => {
+    const invitationId = insertInvitation({
+      validFrom: '2020-01-01T10:00:00.000Z',
+      validUntil: '2020-01-01T12:00:00.000Z',
+    });
+
+    await expect(confirmInvitationEntry(db, guardId, invitationId)).rejects.toBeInstanceOf(
+      InvitationExpiredError,
+    );
+  });
+
+  it('lanza InvitationNotYetValidError para una invitación con validFrom futuro (R5)', async () => {
+    const invitationId = insertInvitation({
+      validFrom: '2099-01-01T10:00:00.000Z',
+      validUntil: '2099-01-01T12:00:00.000Z',
+    });
+
+    await expect(confirmInvitationEntry(db, guardId, invitationId)).rejects.toBeInstanceOf(
+      InvitationNotYetValidError,
+    );
+  });
+
+  it('con pushToken fijado por SQL directo, el stub recibe la petición esperada (R8)', async () => {
+    let receivedBody: unknown;
+    const started = await startStubServer((_req, res, body) => {
+      receivedBody = JSON.parse(body);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ data: [{ status: 'ok', id: 'stub-id' }] }));
+    });
+    stubServer = started.server;
+    process.env.EXPO_PUSH_API_URL = started.baseUrl;
+
+    db.prepare('UPDATE residents SET pushToken = ? WHERE id = ?').run(
+      'ExponentPushToken[resident-token]',
+      residentId,
+    );
+    const invitationId = insertInvitation({
+      validFrom: '2020-01-01T10:00:00.000Z',
+      validUntil: '2099-01-01T12:00:00.000Z',
+      visitorName: 'Visita Con Push',
+    });
+
+    await confirmInvitationEntry(db, guardId, invitationId);
+
+    expect(receivedBody).toEqual([
+      expect.objectContaining({
+        to: 'ExponentPushToken[resident-token]',
+        data: { invitationId },
+      }),
+    ]);
+  });
+
+  it('sin pushToken, el stub no recibe ninguna petición y la función igual confirma el ingreso (R9)', async () => {
+    let requestCount = 0;
+    const started = await startStubServer((_req, res) => {
+      requestCount += 1;
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ data: [{ status: 'ok', id: 'stub-id' }] }));
+    });
+    stubServer = started.server;
+    process.env.EXPO_PUSH_API_URL = started.baseUrl;
+
+    const invitationId = insertInvitation({
+      validFrom: '2020-01-01T10:00:00.000Z',
+      validUntil: '2099-01-01T12:00:00.000Z',
+    });
+
+    const result = await confirmInvitationEntry(db, guardId, invitationId);
+
+    expect(requestCount).toBe(0);
+    expect(result.invitation.usedAt).not.toBeNull();
+    expect(result.entry.invitationId).toBe(invitationId);
+  });
+
+  it('con el stub respondiendo error, la función igual confirma el ingreso sin lanzar (R10)', async () => {
+    const started = await startStubServer((_req, res) => {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'internal' }));
+    });
+    stubServer = started.server;
+    process.env.EXPO_PUSH_API_URL = started.baseUrl;
+
+    db.prepare('UPDATE residents SET pushToken = ? WHERE id = ?').run(
+      'ExponentPushToken[resident-token]',
+      residentId,
+    );
+    const invitationId = insertInvitation({
+      validFrom: '2020-01-01T10:00:00.000Z',
+      validUntil: '2099-01-01T12:00:00.000Z',
+    });
+
+    const result = await confirmInvitationEntry(db, guardId, invitationId);
+
+    expect(result.invitation.usedAt).not.toBeNull();
+    expect(result.entry.invitationId).toBe(invitationId);
   });
 });
