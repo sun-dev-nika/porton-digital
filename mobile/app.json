@@ -1,0 +1,15 @@
+{
+  "expo": {
+    "name": "porton-digital",
+    "slug": "porton-digital",
+    "scheme": "portondigital",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "platforms": ["ios", "android", "web"],
+    "web": {
+      "bundler": "metro"
+    },
+    "plugins": ["expo-router"]
+  }
+}

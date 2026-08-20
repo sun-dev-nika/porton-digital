@@ -7,15 +7,19 @@
   "scripts": {
     "build": "tsc",
     "dev": "ts-node src/index.ts",
+    "start": "node dist/src/index.js",
     "db:seed": "ts-node src/db/seedDev.ts",
+    "db:seed:prod": "node dist/src/db/seedProd.js",
     "test": "jest --passWithNoTests",
     "lint": "eslint . --ext .ts"
   },
   "dependencies": {
+    "cors": "^2.8.5",
     "express": "^4.19.2",
     "jsonwebtoken": "^9.0.2"
   },
   "devDependencies": {
+    "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
     "@types/jest": "^29.5.12",
     "@types/jsonwebtoken": "^9.0.6",
