@@ -90,3 +90,11 @@ export interface CreateManualEntryInput {
 export interface CreateManualEntryResponse {
   entry: Entry;
 }
+
+export interface TodayEntry extends Entry {
+  unitLabel: string;
+}
+
+export interface ListTodayEntriesResponse {
+  entries: TodayEntry[];
+}

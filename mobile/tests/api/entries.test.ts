@@ -1,6 +1,6 @@
 import * as SecureStore from 'expo-secure-store';
 
-import { createManualEntry, listResidentEntries } from '../../src/api/entries';
+import { createManualEntry, listResidentEntries, listTodayEntries } from '../../src/api/entries';
 
 jest.mock('expo-secure-store', () => ({
   getItemAsync: jest.fn(),
@@ -78,5 +78,41 @@ describe('createManualEntry', () => {
     expect(url).toBe('http://localhost:3000/entries/manual');
     expect(init.method).toBe('POST');
     expect(JSON.parse(init.body)).toEqual({ visitorName: 'Juan Pérez', unitLabel: '101' });
+  });
+});
+
+describe('listTodayEntries', () => {
+  const secureStore = SecureStore as jest.Mocked<typeof SecureStore>;
+
+  beforeEach(() => {
+    jest.resetAllMocks();
+    global.fetch = jest.fn();
+  });
+
+  it('llama a GET /entries/today sin method ni body explícitos y propaga el resultado tipado', async () => {
+    secureStore.getItemAsync.mockResolvedValue('stored-jwt-token');
+    const todayEntriesResponse = {
+      entries: [
+        {
+          id: 1,
+          invitationId: null,
+          unitId: 1,
+          guardId: 1,
+          visitorName: 'Juan Pérez',
+          isManual: true,
+          enteredAt: '2026-01-02T10:00:00.000Z',
+          unitLabel: '101',
+        },
+      ],
+    };
+    (global.fetch as jest.Mock).mockResolvedValue(jsonResponse(200, todayEntriesResponse));
+
+    const result = await listTodayEntries();
+
+    expect(result).toEqual(todayEntriesResponse);
+    const [url, init] = (global.fetch as jest.Mock).mock.calls[0];
+    expect(url).toBe('http://localhost:3000/entries/today');
+    expect(init.method).toBe('GET');
+    expect(init.body).toBeUndefined();
   });
 });

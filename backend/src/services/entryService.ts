@@ -1,11 +1,12 @@
 import type { DatabaseSync } from 'node:sqlite';
 
-import { findEntriesByResidentId, insertEntry } from '../db/entries';
-import type { EntryRecord } from '../db/entries';
+import { findEntriesByResidentId, findEntriesForDate, insertEntry } from '../db/entries';
+import type { EntryRecord, EntryWithUnitLabel } from '../db/entries';
 import { findInvitationById, markInvitationUsed } from '../db/invitations';
 import type { InvitationRecord } from '../db/invitations';
 import { findResidentById } from '../db/residents';
 import { findUnitByLabel } from '../db/units';
+import { getCondoTimezoneOffsetHours } from '../config';
 import {
   InvalidManualEntryInputError,
   InvitationAlreadyUsedError,
@@ -18,6 +19,10 @@ import { sendExpoPushNotification } from './pushService';
 
 export function listEntryHistoryForResident(db: DatabaseSync, residentId: number): EntryRecord[] {
   return findEntriesByResidentId(db, residentId);
+}
+
+export function listTodayEntries(db: DatabaseSync, now: Date = new Date()): EntryWithUnitLabel[] {
+  return findEntriesForDate(db, now.toISOString(), getCondoTimezoneOffsetHours());
 }
 
 export interface CreateManualEntryInput {

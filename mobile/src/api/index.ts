@@ -3,7 +3,7 @@ export { request } from './client';
 export type { HttpMethod, RequestOptions } from './client';
 export { API_BASE_URL } from './config';
 export { ApiError, UnauthorizedError } from './errors';
-export { createManualEntry, listResidentEntries } from './entries';
+export { createManualEntry, listResidentEntries, listTodayEntries } from './entries';
 export {
   createInvitation,
   getInvitation,
@@ -26,8 +26,10 @@ export type {
   InvitationWithStatus,
   ListInvitationsResponse,
   ListResidentEntriesResponse,
+  ListTodayEntriesResponse,
   LoginResponse,
   ResidentEntry,
+  TodayEntry,
   UserRole,
   ValidateInvitationByCodeResponse,
 } from './types';

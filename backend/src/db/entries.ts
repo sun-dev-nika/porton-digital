@@ -51,3 +51,30 @@ export function findEntriesByResidentId(db: DatabaseSync, residentId: number): E
     isManual: Boolean(row.isManual),
   })) as EntryRecord[];
 }
+
+export interface EntryWithUnitLabel extends EntryRecord {
+  unitLabel: string;
+}
+
+export function findEntriesForDate(
+  db: DatabaseSync,
+  referenceDateIso: string,
+  timezoneOffsetHours: number,
+): EntryWithUnitLabel[] {
+  const offsetModifier = `${timezoneOffsetHours} hours`;
+  const rows = db
+    .prepare(
+      `SELECT entries.id, entries.invitationId, entries.unitId, entries.guardId,
+              entries.visitorName, entries.isManual, entries.enteredAt,
+              units.label AS unitLabel
+       FROM entries
+       INNER JOIN units ON entries.unitId = units.id
+       WHERE date(entries.enteredAt, ?) = date(?, ?)
+       ORDER BY entries.enteredAt ASC`,
+    )
+    .all(offsetModifier, referenceDateIso, offsetModifier);
+  return (rows as { isManual: number }[] & EntryWithUnitLabel[]).map((row) => ({
+    ...row,
+    isManual: Boolean(row.isManual),
+  })) as EntryWithUnitLabel[];
+}

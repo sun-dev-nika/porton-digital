@@ -4,7 +4,7 @@ import type { DatabaseSync } from 'node:sqlite';
 
 import { requireAuth } from '../middleware/requireAuth';
 import { requireRole } from '../middleware/requireRole';
-import { createManualEntry } from '../services/entryService';
+import { createManualEntry, listTodayEntries } from '../services/entryService';
 import type { CreateManualEntryInput } from '../services/entryService';
 import { InvalidManualEntryInputError, UnitNotFoundError } from '../services/errors';
 
@@ -33,6 +33,11 @@ export function createEntryRouter(db: DatabaseSync): Router {
       }
       throw error;
     }
+  });
+
+  router.get('/today', requireAuth, requireRole('guard'), (req, res) => {
+    const entries = listTodayEntries(db);
+    res.status(200).json({ entries });
   });
 
   return router;

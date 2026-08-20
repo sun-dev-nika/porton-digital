@@ -28,4 +28,12 @@ describe('GuardHomeScreen', () => {
 
     expect(mockPush).toHaveBeenCalledWith('/manualEntry');
   });
+
+  it('navega a /dailyLog al presionar el control de log del día (R11)', () => {
+    const view = render(<GuardHomeScreen />);
+
+    fireEvent.press(view.getByTestId('guard-home-daily-log-button'));
+
+    expect(mockPush).toHaveBeenCalledWith('/dailyLog');
+  });
 });

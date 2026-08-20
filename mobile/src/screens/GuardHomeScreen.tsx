@@ -16,6 +16,9 @@ export function GuardHomeScreen(): JSX.Element {
       >
         <Text>Registro manual</Text>
       </Pressable>
+      <Pressable testID="guard-home-daily-log-button" onPress={() => router.push('/dailyLog')}>
+        <Text>Log del día</Text>
+      </Pressable>
     </View>
   );
 }

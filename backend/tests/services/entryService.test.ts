@@ -22,6 +22,7 @@ import {
   confirmInvitationEntry,
   createManualEntry,
   listEntryHistoryForResident,
+  listTodayEntries,
 } from '../../src/services/entryService';
 
 describe('entryService.listEntryHistoryForResident', () => {
@@ -192,6 +193,193 @@ describe('entryService.listEntryHistoryForResident', () => {
 
   it('devuelve un array vacío cuando el residente no tiene ingresos (R7)', () => {
     const result = listEntryHistoryForResident(db, residentId);
+
+    expect(result).toEqual([]);
+  });
+});
+
+describe('entryService.listTodayEntries', () => {
+  let tempDir: string;
+  let dbPath: string;
+  let db: DatabaseSync;
+  let guardId: number;
+  let unitId: number;
+  let unitLabel: string;
+  const previousCondoTimezoneOffsetHours = process.env.CONDO_TIMEZONE_OFFSET_HOURS;
+
+  beforeEach(() => {
+    tempDir = mkdtempSync(join(tmpdir(), 'porton-digital-list-today-entries-'));
+    dbPath = join(tempDir, 'list-today-entries-test.sqlite');
+    db = createDatabase(dbPath);
+    seedDevelopmentData(db);
+
+    const resident = findResidentByEmail(db, 'resident@dev.local')!;
+    unitId = resident.unitId;
+    unitLabel = '101';
+
+    const guard = findGuardByEmail(db, 'guard@dev.local')!;
+    guardId = guard.id;
+  });
+
+  afterEach(() => {
+    if (previousCondoTimezoneOffsetHours === undefined) {
+      delete process.env.CONDO_TIMEZONE_OFFSET_HOURS;
+    } else {
+      process.env.CONDO_TIMEZONE_OFFSET_HOURS = previousCondoTimezoneOffsetHours;
+    }
+    db.close();
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  function insertEntryForUnit(params: {
+    forUnitId: number;
+    visitorName: string;
+    isManual: number;
+    enteredAt: string;
+  }): number {
+    return db
+      .prepare(
+        'INSERT INTO entries (invitationId, unitId, guardId, visitorName, isManual, enteredAt) VALUES (?, ?, ?, ?, ?, ?)',
+      )
+      .run(null, params.forUnitId, guardId, params.visitorName, params.isManual, params.enteredAt)
+      .lastInsertRowid as number;
+  }
+
+  it('incluye un entries de hoy con enteredAt en formato ISO, con offset 0 por defecto (R1)', () => {
+    const now = new Date('2026-01-02T12:00:00.000Z');
+    insertEntryForUnit({
+      forUnitId: unitId,
+      visitorName: 'Visita ISO',
+      isManual: 0,
+      enteredAt: '2026-01-02T09:00:00.000Z',
+    });
+
+    const result = listTodayEntries(db, now);
+
+    expect(result.map((entry) => entry.visitorName)).toEqual(['Visita ISO']);
+  });
+
+  it('incluye un entries de hoy con enteredAt en formato SQLite por defecto, sin T/Z (R1)', () => {
+    const now = new Date('2026-01-02T12:00:00.000Z');
+    insertEntryForUnit({
+      forUnitId: unitId,
+      visitorName: 'Visita SQLite',
+      isManual: 0,
+      enteredAt: '2026-01-02 23:30:00',
+    });
+
+    const result = listTodayEntries(db, now);
+
+    expect(result.map((entry) => entry.visitorName)).toEqual(['Visita SQLite']);
+  });
+
+  it('excluye entries del día anterior y del día siguiente (R2)', () => {
+    const now = new Date('2026-01-02T12:00:00.000Z');
+    insertEntryForUnit({
+      forUnitId: unitId,
+      visitorName: 'Visita Ayer',
+      isManual: 0,
+      enteredAt: '2026-01-01T23:59:00.000Z',
+    });
+    insertEntryForUnit({
+      forUnitId: unitId,
+      visitorName: 'Visita Mañana',
+      isManual: 0,
+      enteredAt: '2026-01-03T00:00:01.000Z',
+    });
+
+    const result = listTodayEntries(db, now);
+
+    expect(result).toEqual([]);
+  });
+
+  it('con offset -4, un entries de UTC del día siguiente pero del mismo día local aparece (R1, R2)', () => {
+    process.env.CONDO_TIMEZONE_OFFSET_HOURS = '-4';
+    const now = new Date('2026-01-01T10:00:00.000Z');
+    insertEntryForUnit({
+      forUnitId: unitId,
+      visitorName: 'Visita Local Mismo Dia',
+      isManual: 0,
+      enteredAt: '2026-01-02T02:00:00.000Z',
+    });
+
+    const result = listTodayEntries(db, now);
+
+    expect(result.map((entry) => entry.visitorName)).toEqual(['Visita Local Mismo Dia']);
+  });
+
+  it('con offset -4, un entries de UTC del mismo día pero de día local distinto no aparece (R1, R2)', () => {
+    process.env.CONDO_TIMEZONE_OFFSET_HOURS = '-4';
+    const now = new Date('2026-01-01T10:00:00.000Z');
+    insertEntryForUnit({
+      forUnitId: unitId,
+      visitorName: 'Visita Dia Local Anterior',
+      isManual: 0,
+      enteredAt: '2026-01-01T01:00:00.000Z',
+    });
+
+    const result = listTodayEntries(db, now);
+
+    expect(result).toEqual([]);
+  });
+
+  it('devuelve el resultado ordenado ascendente por enteredAt (R3)', () => {
+    const now = new Date('2026-01-02T12:00:00.000Z');
+    insertEntryForUnit({
+      forUnitId: unitId,
+      visitorName: 'Visita Tarde',
+      isManual: 0,
+      enteredAt: '2026-01-02T18:00:00.000Z',
+    });
+    insertEntryForUnit({
+      forUnitId: unitId,
+      visitorName: 'Visita Mañana Temprano',
+      isManual: 0,
+      enteredAt: '2026-01-02T08:00:00.000Z',
+    });
+    insertEntryForUnit({
+      forUnitId: unitId,
+      visitorName: 'Visita Mediodia',
+      isManual: 0,
+      enteredAt: '2026-01-02T12:30:00.000Z',
+    });
+
+    const result = listTodayEntries(db, now);
+
+    expect(result.map((entry) => entry.visitorName)).toEqual([
+      'Visita Mañana Temprano',
+      'Visita Mediodia',
+      'Visita Tarde',
+    ]);
+  });
+
+  it('cada elemento incluye id, invitationId, unitId, guardId, visitorName, isManual, enteredAt y unitLabel (R4)', () => {
+    const now = new Date('2026-01-02T12:00:00.000Z');
+    insertEntryForUnit({
+      forUnitId: unitId,
+      visitorName: 'Visita Completa',
+      isManual: 1,
+      enteredAt: '2026-01-02T09:00:00.000Z',
+    });
+
+    const result = listTodayEntries(db, now);
+
+    expect(result[0]).toMatchObject({
+      id: expect.any(Number),
+      invitationId: null,
+      unitId,
+      guardId,
+      visitorName: 'Visita Completa',
+      isManual: true,
+      enteredAt: '2026-01-02T09:00:00.000Z',
+      unitLabel,
+    });
+  });
+
+  it('devuelve un array vacío cuando no hay entries para el día de now (R7)', () => {
+    const now = new Date('2026-01-02T12:00:00.000Z');
+
+    const result = listTodayEntries(db, now);
 
     expect(result).toEqual([]);
   });
